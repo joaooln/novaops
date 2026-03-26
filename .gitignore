@@ -1,0 +1,12 @@
+node_modules/
+.next/
+.env
+.env.local
+__pycache__/
+*.pyc
+.venv/
+dist/
+.DS_Store
+nginx/ssl/
+*.pem
+*.key
