@@ -3,6 +3,7 @@
 import useSWR from 'swr';
 import { fetcher, getApiUrl } from '@/lib/api';
 import Link from 'next/link';
+import { useSettings } from '@/context/SettingsContext';
 
 interface SystemOverview {
   cpu_percent: number;
@@ -36,13 +37,34 @@ interface Service {
   last_checked: string;
 }
 
-function CircularMeter({ value, label, strokeColor, glowColor }: { value: number; label: string; strokeColor: string; glowColor: string }) {
+function CircularMeter({ value, label }: { value: number; label: string }) {
+  const { warningThreshold, criticalThreshold } = useSettings();
   const radius = 45;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - (value / 100) * circumference;
 
+  let strokeColor = 'stroke-glowCyan';
+  let glowColor = 'from-glowCyan to-transparent';
+  let textColor = 'text-white';
+  let labelColor = 'text-slate-300';
+  let alertBorderColor = '';
+
+  if (value >= criticalThreshold) {
+    strokeColor = 'stroke-glowRed';
+    glowColor = 'from-glowRed to-transparent';
+    textColor = 'text-rose-500';
+    labelColor = 'text-rose-400 font-bold';
+    alertBorderColor = 'border-rose-500/20 bg-rose-500/[0.01]';
+  } else if (value >= warningThreshold) {
+    strokeColor = 'stroke-glowYellow';
+    glowColor = 'from-glowYellow to-transparent';
+    textColor = 'text-amber-500';
+    labelColor = 'text-amber-400';
+    alertBorderColor = 'border-amber-500/20 bg-amber-500/[0.01]';
+  }
+
   return (
-    <div className="flex flex-col items-center justify-center p-6 rounded-2xl glass-panel relative group hover:scale-[1.02] transition-all duration-300">
+    <div className={`flex flex-col items-center justify-center p-6 rounded-2xl glass-panel relative group hover:scale-[1.02] transition-all duration-300 ${alertBorderColor}`}>
       <div className={`absolute -inset-px rounded-2xl bg-gradient-to-r ${glowColor} opacity-0 group-hover:opacity-10 transition-opacity duration-300 -z-10`} />
       <div className="relative w-28 h-28 flex items-center justify-center mb-3">
         <svg className="w-full h-full transform -rotate-90">
@@ -60,10 +82,10 @@ function CircularMeter({ value, label, strokeColor, glowColor }: { value: number
           />
         </svg>
         <div className="absolute text-center">
-          <span className="text-xl font-extrabold text-white">{value}%</span>
+          <span className={`text-xl font-extrabold ${textColor}`}>{value}%</span>
         </div>
       </div>
-      <span className="text-xs font-semibold text-slate-300 tracking-wide uppercase">{label}</span>
+      <span className={`text-xs font-semibold tracking-wide uppercase ${labelColor}`}>{label}</span>
     </div>
   );
 }
@@ -79,6 +101,8 @@ function formatUptime(seconds: number) {
 }
 
 export default function Dashboard() {
+  const { warningThreshold, criticalThreshold } = useSettings();
+
   const { data: overview, error: overviewError } = useSWR<SystemOverview>(getApiUrl('/api/v1/overview'), fetcher, {
     refreshInterval: 2000,
   });
@@ -96,8 +120,32 @@ export default function Dashboard() {
   const degradedServices = services?.filter(s => s.status === 'degraded').length || 0;
   const stoppedServices = services?.filter(s => s.status === 'stopped').length || 0;
 
+  // Check alert limits
+  const hasCriticalAlert = overview && (overview.cpu_percent >= criticalThreshold || overview.memory.percent >= criticalThreshold);
+  const hasWarningAlert = overview && !hasCriticalAlert && (overview.cpu_percent >= warningThreshold || overview.memory.percent >= warningThreshold);
+
   return (
     <div className="space-y-8 animate-fade-in">
+      {/* Alert Warning Bar */}
+      {overview && (hasCriticalAlert || hasWarningAlert) && (
+        <div className={`p-4 rounded-xl border flex items-center gap-3 animate-pulse-slow ${
+          hasCriticalAlert
+            ? 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+            : 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+        }`}>
+          <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+          <div className="text-xs font-semibold">
+            {hasCriticalAlert ? (
+              <span>CRITICAL: High resource consumption detected! Exceeded critical limit of {criticalThreshold}%.</span>
+            ) : (
+              <span>WARNING: System resources are highly loaded. Warning threshold of {warningThreshold}% crossed.</span>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Metrics Row */}
       <section>
         <h2 className="text-lg font-semibold text-slate-300 mb-4 flex items-center gap-2">
@@ -117,20 +165,14 @@ export default function Dashboard() {
             <CircularMeter
               value={Math.round(overview.cpu_percent)}
               label="CPU Usage"
-              strokeColor="stroke-glowCyan"
-              glowColor="from-glowCyan to-transparent"
             />
             <CircularMeter
               value={Math.round(overview.memory.percent)}
               label={`RAM (${overview.memory.used_gb}/${overview.memory.total_gb} GB)`}
-              strokeColor="stroke-glowIndigo"
-              glowColor="from-glowIndigo to-transparent"
             />
             <CircularMeter
               value={Math.round(overview.disk.percent)}
               label={`Disk (${overview.disk.used_gb}/${overview.disk.total_gb} GB)`}
-              strokeColor="stroke-glowGreen"
-              glowColor="from-glowGreen to-transparent"
             />
           </div>
         ) : (

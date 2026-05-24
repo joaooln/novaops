@@ -72,3 +72,9 @@ def network_metrics():
         "active_connections": connections,
         "timestamp": datetime.utcnow().isoformat(),
     }
+
+
+@router.get("/history")
+def metrics_history(limit: int = 60):
+    from app.db import get_metrics_history
+    return get_metrics_history(limit)

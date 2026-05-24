@@ -1,5 +1,9 @@
 from fastapi.testclient import TestClient
 from app.main import app
+from app.db import init_db
+
+# Initialize testing SQLite DB
+init_db()
 
 client = TestClient(app)
 
@@ -78,3 +82,21 @@ def test_service_detail():
 def test_service_detail_not_found():
     response = client.get("/api/v1/services/non-existent-service")
     assert response.status_code == 404
+
+
+def test_metrics_history():
+    response = client.get("/api/v1/metrics/history")
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data, list)
+
+
+def test_k8s_pvcs():
+    response = client.get("/api/v1/k8s/pvcs")
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data, list)
+    if len(data) > 0:
+        assert "name" in data[0]
+        assert "status" in data[0]
+        assert "capacity_gb" in data[0]

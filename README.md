@@ -118,8 +118,10 @@ Push to main
 | `GET` | `/api/v1/metrics/memory` | Memory metrics |
 | `GET` | `/api/v1/metrics/disk` | Disk metrics |
 | `GET` | `/api/v1/metrics/network` | Network metrics |
+| `GET` | `/api/v1/metrics/history` | Historical logged metrics |
 | `GET` | `/api/v1/services/` | List all services |
 | `GET` | `/api/v1/services/{name}` | Service details |
+| `GET` | `/api/v1/k8s/pvcs` | List Kubernetes PVCs |
 
 ---
 

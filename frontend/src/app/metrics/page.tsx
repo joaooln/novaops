@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import useSWR from 'swr';
 import { fetcher, getApiUrl } from '@/lib/api';
+import { useSettings } from '@/context/SettingsContext';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -13,6 +14,7 @@ import {
   LineChart,
   Line,
   CartesianGrid,
+  ReferenceLine,
 } from 'recharts';
 
 interface CpuData {
@@ -63,6 +65,7 @@ interface NetworkData {
 
 export default function MetricsPage() {
   const [mounted, setMounted] = useState(false);
+  const { warningThreshold, criticalThreshold } = useSettings();
   const [cpuHistory, setCpuHistory] = useState<any[]>([]);
   const [memHistory, setMemHistory] = useState<any[]>([]);
   const [netHistory, setNetHistory] = useState<any[]>([]);
@@ -72,12 +75,52 @@ export default function MetricsPage() {
   const { data: memory } = useSWR<MemoryData>(getApiUrl('/api/v1/metrics/memory'), fetcher, { refreshInterval: 2000 });
   const { data: network } = useSWR<NetworkData>(getApiUrl('/api/v1/metrics/network'), fetcher, { refreshInterval: 2000 });
   const { data: disk } = useSWR<DiskData>(getApiUrl('/api/v1/metrics/disk'), fetcher, { refreshInterval: 5000 });
+  
+  // Load historical data from SQLite
+  const { data: historyData } = useSWR<any[]>(getApiUrl('/api/v1/metrics/history?limit=15'), fetcher);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  // Update CPU History
+  // Pre-load historical lines from DB
+  useEffect(() => {
+    if (historyData && historyData.length > 0 && cpuHistory.length === 0) {
+      const cpuHist = historyData.map((d: any) => {
+        const time = new Date(d.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        return { time, cpu: d.cpu };
+      });
+      const memHist = historyData.map((d: any) => {
+        const time = new Date(d.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        return { time, ram: d.ram_percent, swap: d.swap_percent || 0 };
+      });
+      const netHist = historyData.map((d: any, idx: number) => {
+        const time = new Date(d.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        let sentSpeed = 0;
+        let recvSpeed = 0;
+        if (idx > 0) {
+          const prev = historyData[idx - 1];
+          // Calculate delta in MB/s (collector runs every 10s)
+          sentSpeed = Math.max(0, Math.round(((d.net_sent - prev.net_sent) / 10) * 100) / 100);
+          recvSpeed = Math.max(0, Math.round(((d.net_recv - prev.net_recv) / 10) * 100) / 100);
+        }
+        return {
+          time,
+          sentSpeed,
+          recvSpeed,
+          connections: d.connections,
+          rawSent: d.net_sent,
+          rawRecv: d.net_recv,
+        };
+      });
+      
+      setCpuHistory(cpuHist);
+      setMemHistory(memHist);
+      setNetHistory(netHist);
+    }
+  }, [historyData]);
+
+  // Update CPU History dynamically
   useEffect(() => {
     if (cpu) {
       const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -88,7 +131,7 @@ export default function MetricsPage() {
     }
   }, [cpu]);
 
-  // Update Memory History
+  // Update Memory History dynamically
   useEffect(() => {
     if (memory) {
       const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -99,7 +142,7 @@ export default function MetricsPage() {
     }
   }, [memory]);
 
-  // Update Network History (calculate throughput speeds)
+  // Update Network History dynamically
   useEffect(() => {
     if (network) {
       const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -132,6 +175,13 @@ export default function MetricsPage() {
     return <div className="h-96 rounded-2xl glass-panel animate-pulse bg-white/[0.02]" />;
   }
 
+  // Check current alerts to change chart glow accent color
+  const isCpuCritical = cpu && cpu.total_percent >= criticalThreshold;
+  const isCpuWarning = cpu && !isCpuCritical && cpu.total_percent >= warningThreshold;
+
+  const isMemCritical = memory && memory.ram.percent >= criticalThreshold;
+  const isMemWarning = memory && !isMemCritical && memory.ram.percent >= warningThreshold;
+
   return (
     <div className="space-y-8 animate-fade-in">
       {/* CPU Section */}
@@ -144,7 +194,9 @@ export default function MetricsPage() {
             </div>
             {cpu && (
               <div className="text-right">
-                <span className="text-2xl font-bold font-mono text-glowCyan">{cpu.total_percent}%</span>
+                <span className={`text-2xl font-bold font-mono ${
+                  isCpuCritical ? 'text-rose-500' : isCpuWarning ? 'text-amber-500' : 'text-glowCyan'
+                }`}>{cpu.total_percent}%</span>
                 <span className="text-[10px] text-slate-500 block">
                   {cpu.frequency_mhz ? `${Math.round(cpu.frequency_mhz / 1000 * 10) / 10} GHz` : 'N/A'} • {cpu.core_count} Cores
                 </span>
@@ -156,8 +208,8 @@ export default function MetricsPage() {
               <AreaChart data={cpuHistory}>
                 <defs>
                   <linearGradient id="cpuGlow" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.2} />
-                    <stop offset="95%" stopColor="#06b6d4" stopOpacity={0} />
+                    <stop offset="5%" stopColor={isCpuCritical ? '#ef4444' : isCpuWarning ? '#eab308' : '#06b6d4'} stopOpacity={0.2} />
+                    <stop offset="95%" stopColor={isCpuCritical ? '#ef4444' : isCpuWarning ? '#eab308' : '#06b6d4'} stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)" />
@@ -167,7 +219,19 @@ export default function MetricsPage() {
                   contentStyle={{ backgroundColor: 'rgba(15,15,20,0.9)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }}
                   labelClassName="text-slate-400 text-xs font-mono"
                 />
-                <Area type="monotone" dataKey="cpu" name="CPU Usage" stroke="#06b6d4" strokeWidth={2} fillOpacity={1} fill="url(#cpuGlow)" />
+                {/* Dynamic alert thresholds lines on chart */}
+                <ReferenceLine y={warningThreshold} stroke="#eab308" strokeDasharray="3 3" label={{ value: 'Warn', fill: '#eab308', fontSize: 9, position: 'insideBottomRight' }} />
+                <ReferenceLine y={criticalThreshold} stroke="#ef4444" strokeDasharray="3 3" label={{ value: 'Crit', fill: '#ef4444', fontSize: 9, position: 'insideBottomRight' }} />
+                
+                <Area
+                  type="monotone"
+                  dataKey="cpu"
+                  name="CPU Usage"
+                  stroke={isCpuCritical ? '#ef4444' : isCpuWarning ? '#eab308' : '#06b6d4'}
+                  strokeWidth={2}
+                  fillOpacity={1}
+                  fill="url(#cpuGlow)"
+                />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -177,20 +241,29 @@ export default function MetricsPage() {
         <div className="glass-panel p-6 rounded-2xl flex flex-col">
           <h2 className="text-lg font-bold text-white mb-4">Core breakdown</h2>
           <div className="space-y-4 overflow-y-auto max-h-[268px] pr-2">
-            {cpu?.per_core.map((coreVal, i) => (
-              <div key={i} className="space-y-1">
-                <div className="flex justify-between text-xs font-medium">
-                  <span className="text-slate-400">Core {i}</span>
-                  <span className="text-white font-mono">{coreVal}%</span>
+            {cpu?.per_core.map((coreVal, i) => {
+              const isCoreCrit = coreVal >= criticalThreshold;
+              const isCoreWarn = !isCoreCrit && coreVal >= warningThreshold;
+              
+              return (
+                <div key={i} className="space-y-1">
+                  <div className="flex justify-between text-xs font-medium">
+                    <span className="text-slate-400">Core {i}</span>
+                    <span className={`font-mono ${
+                      isCoreCrit ? 'text-rose-500' : isCoreWarn ? 'text-amber-500' : 'text-white'
+                    }`}>{coreVal}%</span>
+                  </div>
+                  <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                    <div
+                      className={`h-1.5 rounded-full transition-all duration-300 ${
+                        isCoreCrit ? 'bg-glowRed' : isCoreWarn ? 'bg-glowYellow' : 'bg-glowCyan'
+                      }`}
+                      style={{ width: `${coreVal}%` }}
+                    />
+                  </div>
                 </div>
-                <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
-                  <div
-                    className="bg-glowCyan h-1.5 rounded-full transition-all duration-300"
-                    style={{ width: `${coreVal}%` }}
-                  />
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </section>
@@ -205,7 +278,9 @@ export default function MetricsPage() {
             </div>
             {memory && (
               <div className="text-right">
-                <span className="text-2xl font-bold font-mono text-glowIndigo">{memory.ram.percent}%</span>
+                <span className={`text-2xl font-bold font-mono ${
+                  isMemCritical ? 'text-rose-500' : isMemWarning ? 'text-amber-500' : 'text-glowIndigo'
+                }`}>{memory.ram.percent}%</span>
                 <span className="text-[10px] text-slate-500 block">
                   {memory.ram.used_gb} / {memory.ram.total_gb} GB RAM used
                 </span>
@@ -217,8 +292,8 @@ export default function MetricsPage() {
               <AreaChart data={memHistory}>
                 <defs>
                   <linearGradient id="ramGlow" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.2} />
-                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                    <stop offset="5%" stopColor={isMemCritical ? '#ef4444' : isMemWarning ? '#eab308' : '#6366f1'} stopOpacity={0.2} />
+                    <stop offset="95%" stopColor={isMemCritical ? '#ef4444' : isMemWarning ? '#eab308' : '#6366f1'} stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)" />
@@ -228,7 +303,18 @@ export default function MetricsPage() {
                   contentStyle={{ backgroundColor: 'rgba(15,15,20,0.9)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }}
                   labelClassName="text-slate-400 text-xs font-mono"
                 />
-                <Area type="monotone" dataKey="ram" name="RAM %" stroke="#6366f1" strokeWidth={2} fillOpacity={1} fill="url(#ramGlow)" />
+                <ReferenceLine y={warningThreshold} stroke="#eab308" strokeDasharray="3 3" label={{ value: 'Warn', fill: '#eab308', fontSize: 9, position: 'insideBottomRight' }} />
+                <ReferenceLine y={criticalThreshold} stroke="#ef4444" strokeDasharray="3 3" label={{ value: 'Crit', fill: '#ef4444', fontSize: 9, position: 'insideBottomRight' }} />
+                
+                <Area
+                  type="monotone"
+                  dataKey="ram"
+                  name="RAM %"
+                  stroke={isMemCritical ? '#ef4444' : isMemWarning ? '#eab308' : '#6366f1'}
+                  strokeWidth={2}
+                  fillOpacity={1}
+                  fill="url(#ramGlow)"
+                />
                 <Area type="monotone" dataKey="swap" name="Swap %" stroke="#a855f7" strokeWidth={1} fillOpacity={0} />
               </AreaChart>
             </ResponsiveContainer>
