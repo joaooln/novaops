@@ -2,7 +2,9 @@
 
 A production-grade DevOps portfolio project demonstrating **Docker**, **CI/CD with GitHub Actions**, **Nginx reverse proxy**, and a **real-time monitoring dashboard** built with Next.js and FastAPI.
 
-![NovaOps Preview](./preview.png)
+![NovaOps Preview](./preview1.png)
+![NovaOps Preview](./preview2.png)
+![NovaOps Preview](./preview3.png)
 
 ---
 
