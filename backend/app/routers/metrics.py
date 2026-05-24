@@ -6,10 +6,11 @@ router = APIRouter(prefix="/metrics", tags=["metrics"])
 
 
 @router.get("/cpu")
-async def cpu_metrics():
-    per_core = psutil.cpu_percent(interval=0.5, percpu=True)
+def cpu_metrics():
+    per_core = psutil.cpu_percent(interval=0.1, percpu=True)
+    total_percent = round(sum(per_core) / len(per_core), 1) if per_core else 0.0
     return {
-        "total_percent": psutil.cpu_percent(interval=0.1),
+        "total_percent": total_percent,
         "per_core": per_core,
         "core_count": psutil.cpu_count(),
         "frequency_mhz": psutil.cpu_freq().current if psutil.cpu_freq() else None,
@@ -18,7 +19,7 @@ async def cpu_metrics():
 
 
 @router.get("/memory")
-async def memory_metrics():
+def memory_metrics():
     mem = psutil.virtual_memory()
     swap = psutil.swap_memory()
     return {
@@ -38,7 +39,7 @@ async def memory_metrics():
 
 
 @router.get("/disk")
-async def disk_metrics():
+def disk_metrics():
     disk = psutil.disk_usage("/")
     io = psutil.disk_io_counters()
     return {
@@ -57,9 +58,12 @@ async def disk_metrics():
 
 
 @router.get("/network")
-async def network_metrics():
+def network_metrics():
     net = psutil.net_io_counters()
-    connections = len(psutil.net_connections())
+    try:
+        connections = len(psutil.net_connections())
+    except (psutil.AccessDenied, PermissionError):
+        connections = 0
     return {
         "bytes_sent_mb": round(net.bytes_sent / (1024**2), 2),
         "bytes_recv_mb": round(net.bytes_recv / (1024**2), 2),

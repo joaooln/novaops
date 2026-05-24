@@ -43,8 +43,8 @@ async def health():
 
 
 @app.get("/api/v1/overview")
-async def overview():
-    cpu = psutil.cpu_percent(interval=1)
+def overview():
+    cpu = psutil.cpu_percent(interval=0.1)
     mem = psutil.virtual_memory()
     disk = psutil.disk_usage("/")
     net = psutil.net_io_counters()
