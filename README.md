@@ -31,7 +31,7 @@ A production-grade DevOps portfolio project demonstrating **Docker**, **CI/CD wi
 ## Architecture
 
 ```
-Internet → Nginx (:80/:443)
+Internet → Nginx (:8081/:8443)
               ├── /api/*  → FastAPI backend (:8000)
               └── /*      → Next.js frontend (:3000)
 ```
@@ -41,36 +41,43 @@ Internet → Nginx (:80/:443)
 ## Getting Started
 
 ### Prerequisites
-- Docker + Docker Compose
+- Docker + Docker-Compose
 - Node.js 20+
 - Python 3.12+
 
-### Run locally
+### Run locally with Docker
 
 ```bash
 git clone https://github.com/your-username/novaops
 cd novaops
 cp .env.example .env
-docker compose up --build
+docker-compose up --build
 ```
 
-Open http://localhost — Nginx will route automatically.
+> [!NOTE]
+> Local Nginx binds to port `8081` (HTTP) and `8443` (HTTPS) to prevent port conflicts with active Kubernetes clusters (like Kind) on port `80/443`.
 
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:8000
-- API Docs: http://localhost:8000/docs
+Open **http://localhost:8081** — Nginx will route automatically.
 
-### Run without Docker
+- Main Entrypoint (Nginx): http://localhost:8081
+- Frontend (Next.js): http://localhost:3000
+- Backend API (FastAPI): http://localhost:8000
+- API Docs (Swagger): http://localhost:8000/docs
+
+### Run locally without Docker
 
 ```bash
-# Backend
+# 1. Start Backend
 cd backend
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload
 
-# Frontend
+# 2. Start Frontend (In a separate terminal)
 cd frontend
-npm install && npm run dev
+npm install
+npm run dev
 ```
 
 ---
